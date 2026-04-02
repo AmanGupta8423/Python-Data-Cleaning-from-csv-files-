@@ -1,0 +1,140 @@
+"""
+Project: Clinical Trials Data Cleaning
+
+About this code:
+This code cleans and transforms clinical trial datasets.
+It handles missing values, fixes messy data, merges datasets,
+and saves the final cleaned data into an Excel file.
+
+Steps performed:
+- Handle missing values
+- Extract email and phone from contact column
+- Merge and reshape treatment data
+- Clean dosage values
+- Merge with adverse reactions
+- Export final data
+"""
+
+  import pandas as pd
+import numpy as np
+
+# -----------------------------
+# load data
+# -----------------------------
+
+patient = pd.read_csv(r'D:\campusX244\DA\patients.csv')
+treatments = pd.read_csv(r'D:\campusX244\DA\treatments.csv')
+treatments_cut = pd.read_csv(r'D:\campusX244\DA\treatments_cut.csv')
+adverse_reactions = pd.read_csv(r'D:\campusX244\DA\adverse_reactions.csv')
+
+patient_df = patient.copy()
+treatments_df = treatments.copy()
+treatments_cut_df = treatments_cut.copy()
+adverse_reactions_df = adverse_reactions.copy()
+
+
+# -----------------------------
+# missing values handle krna
+# -----------------------------
+
+# patient data me missing fill
+patient_df.fillna('Unknown', inplace=True)
+
+# treatments me hba1c_change fill kr rhe h
+treatments_df['hba1c_change'].fillna(
+    treatments_df['hba1c_start'] - treatments_df['hba1c_end'], inplace=True
+)
+
+treatments_cut_df['hba1c_change'].fillna(
+    treatments_cut_df['hba1c_start'] - treatments_cut_df['hba1c_end'], inplace=True
+)
+
+
+# -----------------------------
+# contact column clean krna
+# -----------------------------
+
+import re
+
+# email nikal rhe h
+patient_df['email'] = patient_df['contact'].str.extract(
+    r'([a-zA-Z][a-zA-Z0-9._]*[a-zA-Z]@[a-zA-Z0-9.-]*[a-zA-Z]\.[a-zA-Z]+)',
+    expand=False
+)
+
+# mobile number nikal rhe h
+patient_df['mobile_number'] = patient_df['contact'].str.extract(
+    r'(\+?1\s?[-.\(]?\d{3}[-.\)]?\s?\d{3}[-.\s]?\d{4}|\d{3}-\d{3}-\d{4})',
+    expand=False
+)
+
+# contact column hata diya
+patient_df.drop('contact', axis=1, inplace=True)
+
+
+# -----------------------------
+# treatments data combine krna
+# -----------------------------
+
+treatments_df = pd.concat([treatments_df, treatments_cut_df], ignore_index=True)
+
+
+# -----------------------------
+# data reshape krna (wide → long)
+# -----------------------------
+
+treatments_df = treatments_df.melt(
+    id_vars=['given_name','surname','hba1c_start','hba1c_end','hba1c_change'],
+    var_name='type',
+    value_name='dosage'
+)
+
+# '-' wala data hata diya
+treatments_df = treatments_df[treatments_df['dosage'] != '-']
+treatments_df.reset_index(drop=True, inplace=True)
+
+
+# -----------------------------
+# dosage clean krna
+# -----------------------------
+
+# split kr diya
+treatments_df['dosage_start'] = treatments_df['dosage'].str.split('-').str.get(0)
+treatments_df['dosage_end'] = treatments_df['dosage'].str.split('-').str.get(1)
+
+# original column hata diya
+treatments_df.drop('dosage', axis=1, inplace=True)
+
+# 'u' hata ke number me convert
+treatments_df['dosage_start'] = treatments_df['dosage_start'].str.replace('u', '').astype(int)
+treatments_df['dosage_end'] = treatments_df['dosage_end'].str.replace('u', '').astype(int)
+
+
+# -----------------------------
+# adverse reactions merge krna
+# -----------------------------
+
+treatments_df = treatments_df.merge(
+    adverse_reactions_df,
+    how='left',
+    on=['given_name','surname']
+)
+
+# null ko replace kr diya
+treatments_df['adverse_reaction'].fillna('No Reaction', inplace=True)
+
+
+# -----------------------------
+# chota fix
+# -----------------------------
+
+patient_df.loc[8, 'given_name'] = 'David'
+
+
+# -----------------------------
+# final file save krna
+# -----------------------------
+
+with pd.ExcelWriter(r'D:\campusX244\DA\clinical_trials.xlsx') as writer:
+    patient_df.to_excel(writer, sheet_name='patients', index=False)
+    treatments_df.to_excel(writer, sheet_name='treatments', index=False)
